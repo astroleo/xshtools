@@ -5,6 +5,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 import subprocess
 from scipy.interpolate import interp1d
+from unmask_spectra import unmask_spectra
 
 ##
 ## generate molecfit config files for correcting an OB as specified in a
@@ -194,9 +195,12 @@ def interpol_fluxstd_modelspec(spec_flux_TAC,wave):
 
 	hdu=fits.open(spec_flux_TAC)
 	flux_name=hdu[0].header['HIERARCH ESO OBS NAME'].split("_")[0]
-	##
-	## WARNING: arm is hardcoded here!
-	flux_model_spec=xdir+"data/specphot_VIS/"+flux_name+"_VIS.txt"
+	arm=hdu[0].header['HIERARCH ESO SEQ ARM']
+	arms=['UVB','VIS','NIR']
+	if arm not in arms:
+		raise ValueError("arm " + arm + " not known.")
+
+	flux_model_spec=xdir+"data/specphot/"+flux_name+"_"+arm+".txt"
 	d=np.genfromtxt(flux_model_spec)
 	w=d[:,0]
 	f=d[:,1]
@@ -205,23 +209,64 @@ def interpol_fluxstd_modelspec(spec_flux_TAC,wave):
 	return(f_model_interpol,flux_name)
 
 ##
+## compare flux calibrations for all three arms
+##
+def flux_intercalibration(ob_name):
+	xdir=os.getenv('PROJECTS')+'/LP-BAT/XSHOOTER/'
+	rdir=xdir+'data/spectra/'+ob_name
+	mdir=xdir+'data/molecfit/'+ob_name
+	
+	flux_uvb=rdir+"/FLUX_UVB_spec.fits"
+	flux_vis=mdir+"/FLUX_VIS_spec_TAC.fits"
+#	flux_nir=mdir+"/FLUX_NIR_spec_TAC.fits"
+	
+	w_uvb,f_uvb,n_uvb=unmask_spectra(flux_uvb)
+	w_vis,f_vis,n_vis=unmask_spectra(flux_vis, tac=True)
+#	w_nir,f_nir,n_nir=unmask_spectra(flux_nir, tac=True)
+	
+	f_model_interpol_uvb,flux_name=interpol_fluxstd_modelspec(flux_uvb,w_uvb)
+	f_model_interpol_vis,flux_name=interpol_fluxstd_modelspec(flux_vis,w_vis)
+#	f_model_interpol_nir,flux_name=interpol_fluxstd_modelspec(flux_uvb,w_uvb)
+
+	flux_corr_factor_uvb = f_model_interpol_uvb/f_uvb
+	flux_corr_factor_vis = f_model_interpol_vis/f_vis
+	plt.plot(w_uvb,flux_corr_factor_uvb)
+	plt.plot(w_vis,flux_corr_factor_vis)
+	plt.xlim([520,620])
+	m=np.median(flux_corr_factor_uvb[w_uvb > 520])
+	s=np.std(flux_corr_factor_uvb[w_uvb > 520])
+	plt.ylim([0,m+5*s])
+	plt.savefig(ob_name+"_UVB_VIS_intercalibration.png")
+	plt.clf()
+
+
+
+##
 ## flux-calibrate science spectrum, generate combined mask, FITS files, QC plots
 ##
-def flux_calibrate(ob_name):
+def flux_calibrate(ob_name,arm):
 	xdir=os.getenv('PROJECTS')+'/LP-BAT/XSHOOTER/'
+	rdir=xdir+'data/spectra/'+ob_name
 	mdir=xdir+'data/molecfit/'+ob_name
 	caldir=xdir+'data/calibrated/'+ob_name
 	if not os.path.isdir(caldir):
 		os.mkdir(caldir)
 
-	spec_sci_TAC = mdir+"/SCI_VIS_spec_TAC.fits"
+	## UVB does not require telluric correction
+	if arm=="UVB":
+		spec_sci_TAC = rdir+"/SCI_UVB_spec.fits"
+	else:
+		spec_sci_TAC = mdir+"/SCI_"+arm+"_spec_TAC.fits"
 	if not os.path.isfile(spec_sci_TAC):
-		print("File missing:",spec_sci_TAC)
+		raise IOError("File missing: " + spec_sci_TAC)
 #		return()
 
-	spec_flux_TAC = mdir+"/FLUX_VIS_spec_TAC.fits"
+	if arm=="UVB":
+		spec_flux_TAC = rdir+"/FLUX_UVB_spec.fits"
+	else:
+		spec_flux_TAC = mdir+"/FLUX_VIS_spec_TAC.fits"
 	if not os.path.isfile(spec_flux_TAC):
-		print("File missing:",spec_flux_TAC)
+		raise IOError("File missing: " + spec_flux_TAC)
 #		return()
 	
 	hdu_sci=fits.open(spec_sci_TAC)
@@ -287,16 +332,10 @@ def flux_calibrate(ob_name):
 	tbhdulist.writeto(outfile,clobber=True)
 
 #ob_name="ESO208-G021_1"
-#run_molecfit(ob_name)
-#molecfit_QC(ob_name)
-#flux_calibrate(ob_name)
-
 #ob_name="NGC1079_1"
+#ob_name="NGC6814_1"
+#ob_name="NGC2110_1"
+#ob_name="NGC3783_1"
 #run_molecfit(ob_name)
 #molecfit_QC(ob_name)
 #flux_calibrate(ob_name)
-
-ob_name="NGC6814_1"
-run_molecfit(ob_name)
-molecfit_QC(ob_name)
-flux_calibrate(ob_name)

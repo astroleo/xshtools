@@ -1,9 +1,12 @@
 import numpy as np
 from matplotlib import pyplot as plt
-from scipy import interpolate
+from scipy.interpolate import interp1d
 from scipy.ndimage import gaussian_filter1d
 from astropy.io import fits
 import os
+from unmask_spectra import unmask_spectra
+
+import pdb
 
 ##
 ## wishlist
@@ -68,78 +71,50 @@ def add_mask_telluric(wave, imask, region, z):
 	red_edge = region[1]/(1+z)
 	imask[(wave > blue_edge) & (wave < red_edge)] = 2
 
-def write_spec_starlight(wave,flux,noise,mask,fname,z):
-	f_factor=1e16
-	lamgrid=4000+5*np.arange(3000)
+def write_spec_starlight(calspec_file,fname,z,wrange):
+	wave,flux,noise = unmask_spectra(calspec_file)
+	wave*=10 ## in Angstrom
+	##
+	## normalize flux and noise
+	m=np.median(flux)
+	flux/=m
+	noise/=m
+	
+	##
+	## define output wavelength vector
+	wsampling=5 ## wavelength sampling in Angstrom
+	lamgrid=wrange[0] + wsampling * np.arange(np.floor((wrange[1]-wrange[0])/wsampling))
 
 	##
-	## convolve to resolution of spectral base
+	## convolve to resolution of spectral base, i.e. BC03 res = 3 \AA
 	##
-	flux=gaussian_filter1d(flux,7)
-	## find out right smoothening kernel
-
+	## XSHOO resolution is 12600 (VIS) independent of lambda, i.e. choose kernel 
+	##    appropriate for central wavelength
+	xres=12600
+	FWHM_gal=np.average(wrange)/xres
+	FWHM_tem=3
+	FWHM_dif = np.sqrt(FWHM_tem**2 - FWHM_gal**2)
+	sigma = FWHM_dif/2.355/(wave[2]-wave[1]) # Sigma difference in pixels
+	
+	flux=gaussian_filter1d(flux,sigma)
 	##
 	## interpolation is flux-conserving when accounting for different spectral pixel size
 	##    dl is 0.2 in UVB and VIS, 0.6 in NIR; here we re-sample to 2 \AA
 	##
-	f_interpol=5.
-	f=interpolate.interp1d(wave,flux)
-	iflux=f_interpol*f_factor*f(lamgrid)
+	f=interp1d(wave,flux)
+	iflux=f(lamgrid)
 	
 	##
 	## interpolate inverse variance (since this is the additive quantity)
-	noise*=f_factor
-	v=interpolate.interp1d(wave,1/(noise**2))
+	v=interp1d(wave,1/(noise**2))
 	ivariance=v(lamgrid)
 	inoise=1/np.sqrt(ivariance)
-	###
-	## STARLIGHT seems to have problems with very tiny errors we have at the moment (2015-05-15)
-	## WORKAROUND: multiply noise by some factor until noise levels become reasonable
-	###
-#	inoise*=30
-	
-	##
-	## Careful when interpolating mask
-	m=interpolate.interp1d(wave,mask)
-	imask=m(lamgrid)
-	imask[imask > 0] = 2
-	
-	##
-	## masks for atmospheric A and B bands (and de-redshift them)
-	## from https://www.cfa.harvard.edu/~cnowlan/papers/nowlan_etal_maestro_pt_model_jqsrt2007.pdf
-	##    strong A band centered at 7620 \AA
-	##    weaker B band centered at 6900 \AA
-	add_mask_telluric(lamgrid, imask, [7500,7700], z)
-	add_mask_telluric(lamgrid, imask, [6800,7000], z)
-	##
-	## masks for transition regions of XSHOOTER spectral arms
-	add_mask_telluric(lamgrid, imask, [5530,5600], z)
-	add_mask_telluric(lamgrid, imask, [10100,10200], z)
-	
-	##
-	## add masks for sky lines in near-IR
-	## use list from Ric and mask all regions where OH line flux > 0.05
-	file_oh='/Users/leo/SINFO-Tools/skysub/ohspecHK.fits'
-	hdu=fits.open(file_oh)
-	hdr=hdu[0].header
-	waveOH_mu=(np.arange(hdr['NAXIS1'])+1-hdr['CRPIX1'])*hdr['CDELT1']+hdr['CRVAL1']
-	waveOH=waveOH_mu*10000
-	ohspec=hdu[0].data
-	##
-	## truncate to J/H band
-	## TODO!! put this in mask file
-	waveOH=waveOH[waveOH < 18000]
-	ohspec=ohspec[waveOH < 18000]
-	##
-	## interpolate OH spec to lamgrid resolution and mask regions affected by OH lines
-	fOH=interpolate.interp1d(waveOH,ohspec,bounds_error=False,fill_value=0)
-	iohspec=fOH(lamgrid)
-	imask[np.where(iohspec > 0.05)] = 2
-	
-	##
-	## mask out entire NIR
-	#imask[np.where(lamgrid > 9000)] = 2
 
+	## masks for transition regions of XSHOOTER spectral arms
+	imask=np.zeros(iflux.shape)
+#	add_mask_telluric(lamgrid, imask, [5530,5600], z)
+#	add_mask_telluric(lamgrid, imask, [10100,10200], z)
+	
 	outdir=os.getenv('PROJECTS') + '/LP-BAT/XSHOOTER/STARLIGHT/STARLIGHTv04/spectra/'
 	np.savetxt(outdir+fname,np.transpose((lamgrid,iflux,inoise,imask)),fmt=('%5.0f.   %8.3f   %8.3f    %3.0f'))
 	print("Wrote {fname}".format(fname=fname))	

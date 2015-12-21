@@ -144,21 +144,12 @@ def aperture_mask(f):
 ## MISSING
 ##    proper treatment of D.A.R. (link to respective routines later...) / important only when dealing with UVB arm!
 ##
-def flatten_spectrum(f,outfile=None):
+def flatten_spectrum(f,arm,outfile=None):
 	ix,ix2,wave,flux_cube,noise_cube,qual_cube,hdr = aperture_mask(f)
 	##
 	##
 	flux,noise,qual,corr = qual_interpret_interpolate(flux_cube, noise_cube, qual_cube, ix, ix2)
-		
-	##
-	## find out what arm we have to set correct plot borders
-	if wave[0] < 500:
-		arm="UVB"
-	elif (wave[0] > 500) & (wave[0] < 1000):
-		arm="VIS"
-	else:
-		arm="NIR"
-
+	
 	## plot (flux vs. wavelength + quality)
 	norm=np.median(flux)
 	plt.plot(wave,flux/norm)
@@ -190,9 +181,13 @@ def flatten_spectrum(f,outfile=None):
 			## plot closeup in CaT region
 			wregion=[850,880]		
 		elif arm == "UVB":
-			## plot closeup of H-beta region
+			## plot closeup of H-beta 486 region
 			wregion=[470,500]
-			
+		elif arm == "NIR":
+			## plot closeup of Pa-beta 1282 region
+			wregion=[1250,1350]
+		
+#		pdb.set_trace()
 		norm=np.median(flux[(wave > wregion[0]) & (wave < wregion[1])])
 
 		plt.plot(wave,flux/norm)
@@ -203,7 +198,7 @@ def flatten_spectrum(f,outfile=None):
 		plt.ylabel("Flux (normalized)")
 		plt.ylim([0,1.5])
 		plt.xlim(wregion)
-		plt.savefig(outfile+"_detail.pdf")
+		plt.savefig(outfile+"_"+arm+"_detail.pdf")
 		plt.close()
 	else:
 		plt.show()
@@ -282,14 +277,22 @@ def inspect_cube(f,s,w=False):
 ##
 ## INPUT
 ##    ob_name
-def flatten_ob(ob_name):
-	arm="VIS"
-	xdir=os.getenv('PROJECTS')+'/LP-BAT/XSHOOTER/'
+def flatten_ob(ob_name,arm):
+	arms=["UVB","VIS","NIR"]
+	if arm not in arms:
+		raise ValueError("arm ", arm, " not known.")
+
+	xdir=os.getenv("PROJECTS")+"/LP-BAT/XSHOOTER/"
 	base_dir_red = xdir+'data/reflex_end_products/2015-11-12_pipeline_2-6-8/'
 	dataset_definition = xdir+'data/dataset_definition/'+ob_name+'_'+arm+'.txt'
 	a=ascii.read(dataset_definition,data_start=0)
 	
-	dprlist=["SCI","TELL","FLUX"]
+	##
+	## UVB does not need telluric correction
+	if arm=="UVB":
+		dprlist=["SCI","FLUX"]
+	else:
+		dprlist=["SCI","TELL","FLUX"]
 	
 	for row in a:
 		ob=row[0]
@@ -311,12 +314,20 @@ def flatten_ob(ob_name):
 			print("Outfile (spectrum) exists:",f_out)
 			continue
 
-		flatten_spectrum(f_cube,f_out)
+		flatten_spectrum(f_cube,arm,outfile=f_out)
 
 
-#flatten_ob("ESO208-G021_1")
-#flatten_ob("NGC1079_1")
-flatten_ob("NGC6814_1")
+#flatten_ob("ESO208-G021_1","VIS")
+#flatten_ob("ESO208-G021_1","UVB")
+#flatten_ob("NGC1079_1","VIS")
+#flatten_ob("NGC1079_1","UVB")
+#flatten_ob("NGC6814_1","VIS")
+#flatten_ob("NGC6814_1","UVB")
+#flatten_ob("NGC2110_1","VIS")
+#flatten_ob("NGC2110_1","UVB")
+#flatten_ob("NGC3783_1","VIS")
+#flatten_ob("NGC3783_1","UVB")
+###flatten_ob("NGC3783_1","NIR")
 
 ################################################################################
 #################################### "MAIN" ####################################
