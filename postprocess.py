@@ -7,33 +7,39 @@
 ## (3?) stitch spectrum together / find fudge factors between arms
 ##
 
+#
+## required environment variables
+##
+## XDIR -- root directory for QC plots and output (calibrated) files
+## XSHOOREDUCED -- root directory where the pipeline-reduced data are
+
 import numpy as np
 from astropy.io import fits, ascii
 from matplotlib import pyplot as plt
+from dar_extract import dar_position
+
 import os
 import pdb
 
+	
 ##
 ## FUNCTION qual_interpret_interpolate
 ##
 ## PURPOSE
 ##    - interpret QUAL extension in X-SHOOTER reduced data
-##    - interpolate bad pixels linearly in vertical direction
 ##
 ## INPUT
 ##     flux_cube, noise_cube
 ##     qual_cube: cube with bad pixel codes
 ##     ix: aperture mask
-##     ix2: aperture mask, 1 pixel wider (for interpolation of bad pixels within the are defined by mask_cube)
 ##
-def qual_interpret_interpolate(flux_cube, noise_cube, qual_cube, ix, ix2):
+def qual_interpret_interpolate(flux_cube, noise_cube, qual_cube, ix):
 	## code_bad: code above which a pixel is interpreted as bad
 	code_bad = 1
 
 	##
 	## bad flags within aperture (bad_aper) and within aperture + 1 pixel (bad_aper2) -- for interpolation purposes
 	bad_aper = ix*qual_cube >= code_bad
-	bad_aper2 = ix2*qual_cube >= code_bad
 	
 	qual=np.zeros(flux_cube.shape[0])
 	corr=np.zeros(flux_cube.shape[0])
@@ -44,48 +50,16 @@ def qual_interpret_interpolate(flux_cube, noise_cube, qual_cube, ix, ix2):
 	
 	for s in np.arange(flux_cube.shape[0]):
 		nbad_in_aper = np.sum(bad_aper[s,:,:])
-		nbad_in_aper2 = np.sum(bad_aper2[s,:,:])
 		
 		if nbad_in_aper == 0:
 			qual[s] = 1
 			corr[s] = 0
 			ngood+=1
-			#print("good slice")
-###
-####		if there are more than maxbad bad pixels -> slice is bad, else find out how important the pixels are and only declare slice as bad if pixels are expected 
-####		to have a lot of flux.
-####		to check that we interpolate the expected flux from the neighboring good pixels and compare the interpolated flux to the summed flux of all good pixels
-####		this ratio gives the relative importance of the suspected bad pixel; if it is > 0 and < X %, we treat the pixel as good, otherwise the entire slice 
-####		(spectral point) is considered bad
-###
-###		else:
-###			
-###			# locate bad pixels
-###			# for each bad pixel:
-###			#	check that its neighbours are not bad pixels (otherwise slice is bad)
-###			#
-###				
-###			
-###		elif nbad_in_aper2 == 1:
-###			## locate bad pixel(s), take average from vertical neighbours
-###			ix_bad = np.where(bad_aper2[s,:,:] == True)
-###			if (ix_bad[0] > flux_cube.shape[1]-1) or (ix_bad[0] < 1):
-###				print("WARNING: Running out of pixels")
-###				qual[s] = 0
-###				nbad+=1
-###			flux_cube[s,ix_bad[0],ix_bad[1]] = 0.5 * (flux_cube[s,ix_bad[0]+1,ix_bad[1]] + flux_cube[s,ix_bad[0]-1,ix_bad[1]])
-###			noise_cube[s,ix_bad[0],ix_bad[1]] = 1/np.sqrt(2) * np.sqrt(noise_cube[s,ix_bad[0]+1,ix_bad[1]]**2 + noise_cube[s,ix_bad[0]-1,ix_bad[1]]**2)
-###			ncorr+=1
-###			corr[s] = 1
-###			qual[s] = 1
-###			#print("OOOOOOOOO corrected slice OOOOOOOOO")
 		else:
 			qual[s] = 0
 			corr[s] = 0
 			nbad+=1
-			#print("XXXXXXXXX bad slice XXXXXXXXX")
 
-	#pdb.set_trace()
 
 	print("bad: {0}, good: {1} pixels.".format(nbad,ngood))
 	flux = np.sum(flux_cube*ix, axis=(1,2))
@@ -94,9 +68,15 @@ def qual_interpret_interpolate(flux_cube, noise_cube, qual_cube, ix, ix2):
 	noise = np.sqrt(np.sum((noise_cube*ix)**2, axis=(1,2)))
 		
 	return(flux,noise,qual,corr)
-			
-		
-def aperture_mask(f):
+
+
+##
+## FUNCTION flatten_spectrum
+## 
+## PURPOSE
+##    take data cube, extract 1D spectrum from it
+##
+def flatten_spectrum(f,arm,dd_pixel,outfile=None):
 	hdu=fits.open(f)
 	##
 	## wavelength vector is the same for all three extensions, 
@@ -109,46 +89,24 @@ def aperture_mask(f):
 	flux_cube=hdu[0].data
 	noise_cube=hdu[1].data
 	qual_cube=hdu[2].data
-	
-	##
-	## determine max position in flux cube in a robust way
-	img=np.nanmedian(flux_cube,axis=0)
-	max=np.unravel_index(np.ravel(np.nanargmax(img)),img.shape)
-	##
-	## assuming this is the scale -- however, seems to be WRONG
-	## CDELT1 is 2 arcsec -- should be 0.6 arcsec... 
-	##    -- anyway, I don't need the X direction here...
-	##
-	#scale_x_arcsec=3600*float(hdu[0].header['CDELT1'])
+
 	scale_y_arcsec=3600*float(hdu[0].header['CDELT2'])
-	##
 	aperture_arcsec=1.0
+
 	r_px_y = np.ceil(aperture_arcsec/(2*scale_y_arcsec))
-	##
-	## create rectangular aperture img.shape[0] is 26 for pipeline products, img.shape[1] is 3
-	##
-	## TO DO: create proper circular aperture?
-	##
-	z,y,x=np.mgrid[:flux_cube.shape[0],:flux_cube.shape[1],:flux_cube.shape[2]]
-	ix  = np.abs(y-max[0]) < r_px_y
-	ix2 = np.abs(y-max[0]) < r_px_y+1
-	return(ix,ix2,wave,flux_cube,noise_cube,qual_cube,hdr)
 
+	##
+	## dd_pixel is either an array of same length as wave (check) or a single value (y_NIR from dar_position)
+	if dd_pixel.size > 1:
+		z,y,x=np.mgrid[:flux_cube.shape[0],:flux_cube.shape[1],:flux_cube.shape[2]]
+		ix  = np.abs(y-dd_pixel[:,None,None]) < r_px_y
+	else:
+		z,y,x=np.mgrid[:flux_cube.shape[0],:flux_cube.shape[1],:flux_cube.shape[2]]
+		ix  = np.abs(y-dd_pixel) < r_px_y
 
-##
-## FUNCTION flatten_spectrum
-## 
-## PURPOSE
-##    take data cube, extract 1D spectrum from it
-##
-## MISSING
-##    proper treatment of D.A.R. (link to respective routines later...) / important only when dealing with UVB arm!
-##
-def flatten_spectrum(f,arm,outfile=None):
-	ix,ix2,wave,flux_cube,noise_cube,qual_cube,hdr = aperture_mask(f)
 	##
 	##
-	flux,noise,qual,corr = qual_interpret_interpolate(flux_cube, noise_cube, qual_cube, ix, ix2)
+	flux,noise,qual,corr = qual_interpret_interpolate(flux_cube, noise_cube, qual_cube, ix)
 	
 	## plot (flux vs. wavelength + quality)
 	norm=np.median(flux)
@@ -277,57 +235,68 @@ def inspect_cube(f,s,w=False):
 ##
 ## INPUT
 ##    ob_name
-def flatten_ob(ob_name,arm):
-	arms=["UVB","VIS","NIR"]
-	if arm not in arms:
-		raise ValueError("arm ", arm, " not known.")
-
-	xdir=os.getenv("PROJECTS")+"/LP-BAT/XSHOOTER/"
-	base_dir_red = xdir+'data/reflex_end_products/2015-11-12_pipeline_2-6-8/'
-	dataset_definition = xdir+'data/dataset_definition/'+ob_name+'_'+arm+'.txt'
-	a=ascii.read(dataset_definition,data_start=0)
-	
-	##
-	## UVB does not need telluric correction
-	if arm=="UVB":
-		dprlist=["SCI","FLUX"]
-	else:
-		dprlist=["SCI","TELL","FLUX"]
-	
-	for row in a:
-		ob=row[0]
-		dpid=row[1]
-		dpr=dprlist[row.index]
-		dir_cube=base_dir_red+dpid.replace(":","_")+"_tpl/"
-		f_cube=dir_cube+ob+"_"+dpr+"_IFU_MERGE3D_DATA_OBJ_"+arm+".fits"
-
-		if not os.path.isfile(f_cube):
-			print("Cube file does not exist at", f_cube)
-			continue
-
-		dir_out=xdir+"data/spectra/"+ob_name+"/"
-		if not os.path.isdir(dir_out):
-			os.mkdir(dir_out)
+##
+def flatten_ob(ob_name):
+	arms=["NIR","VIS","UVB"]
+	for arm in arms:
+		dataset_definition = os.getenv("XDIR")+'/dataset_definition/'+ob_name+'_'+arm+'.txt'
+		a=ascii.read(dataset_definition,data_start=0)
 		
-		f_out=dir_out+dpr+"_"+arm+"_spec.fits"
-		if os.path.isfile(f_out):
-			print("Outfile (spectrum) exists:",f_out)
-			continue
+		##
+		## UVB does not need telluric correction
+		if arm=="UVB":
+			dprlist=["SCI","FLUX"]
+		else:
+			dprlist=["SCI","TELL","FLUX"]
+		
+		for row in a:
+			ob=row[0]
+			dpid=row[1]
+			dpr=dprlist[row.index]
+			dir_cube=os.getenv("XSHOOREDUCED")+"/"+dpid.replace(":","_")+"_tpl/"
+			f_cube=dir_cube+ob+"_"+dpr+"_IFU_MERGE3D_DATA_OBJ_"+arm+".fits"
 
-		flatten_spectrum(f_cube,arm,outfile=f_out)
+			if not os.path.isfile(f_cube):
+				print("Cube file does not exist at", f_cube)
+				continue
+
+			dir_out=os.getenv("XDIR")+"/spectra/"+ob_name+"/"
+			if not os.path.isdir(dir_out):
+				os.mkdir(dir_out)
+		
+			f_out=dir_out+dpr+"_"+arm+"_spec.fits"
+			if os.path.isfile(f_out):
+				print("Outfile (spectrum) exists:",f_out)
+				continue
+
+			##
+			## do centroiding on near-IR arm and compute atmospheric dispersion correction from that position
+			if arm=="NIR" and dpr=="SCI":
+				dd_pixel_UVB_SCI,dd_pixel_VIS_SCI,y_NIR = dar_position(dpid)
+				flatten_spectrum(f_cube,arm,y_NIR,outfile=f_out)
+			if arm=="NIR" and dpr=="TELL":
+				dd_pixel_UVB_TELL,dd_pixel_VIS_TELL,y_NIR = dar_position(dpid)
+				flatten_spectrum(f_cube,arm,y_NIR,outfile=f_out)
+			if arm=="NIR" and dpr=="FLUX":
+				dd_pixel_UVB_FLUX,dd_pixel_VIS_FLUX,y_NIR_FLUX = dar_position(dpid)
+				flatten_spectrum(f_cube,arm,y_NIR,outfile=f_out)
+			
+			if arm=="UVB" and dpr=="SCI":
+				flatten_spectrum(f_cube,arm,dd_pixel_UVB_SCI,outfile=f_out)
+			if arm=="UVB" and dpr=="TELL":
+				flatten_spectrum(f_cube,arm,dd_pixel_UVB_TELL,outfile=f_out)
+			if arm=="UVB" and dpr=="FLUX":
+				flatten_spectrum(f_cube,arm,dd_pixel_UVB_FLUX,outfile=f_out)
+
+			if arm=="VIS" and dpr=="SCI":
+				flatten_spectrum(f_cube,arm,dd_pixel_VIS_SCI,outfile=f_out)
+			if arm=="VIS" and dpr=="TELL":
+				flatten_spectrum(f_cube,arm,dd_pixel_VIS_TELL,outfile=f_out)
+			if arm=="VIS" and dpr=="FLUX":
+				flatten_spectrum(f_cube,arm,dd_pixel_VIS_FLUX,outfile=f_out)
 
 
-#flatten_ob("ESO208-G021_1","VIS")
-#flatten_ob("ESO208-G021_1","UVB")
-#flatten_ob("NGC1079_1","VIS")
-#flatten_ob("NGC1079_1","UVB")
-#flatten_ob("NGC6814_1","VIS")
-#flatten_ob("NGC6814_1","UVB")
-#flatten_ob("NGC2110_1","VIS")
-#flatten_ob("NGC2110_1","UVB")
-#flatten_ob("NGC3783_1","VIS")
-#flatten_ob("NGC3783_1","UVB")
-###flatten_ob("NGC3783_1","NIR")
+
 
 ################################################################################
 #################################### "MAIN" ####################################

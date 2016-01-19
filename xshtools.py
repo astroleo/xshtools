@@ -4,7 +4,6 @@ from scipy.interpolate import interp1d
 from scipy.ndimage import gaussian_filter1d
 from astropy.io import fits
 import os
-from unmask_spectra import unmask_spectra
 
 import pdb
 
@@ -70,54 +69,6 @@ def add_mask_telluric(wave, imask, region, z):
 	blue_edge = region[0]/(1+z)
 	red_edge = region[1]/(1+z)
 	imask[(wave > blue_edge) & (wave < red_edge)] = 2
-
-def write_spec_starlight(calspec_file,fname,z,wrange):
-	wave,flux,noise = unmask_spectra(calspec_file)
-	wave*=10 ## in Angstrom
-	##
-	## normalize flux and noise
-	m=np.median(flux)
-	flux/=m
-	noise/=m
-	
-	##
-	## define output wavelength vector
-	wsampling=5 ## wavelength sampling in Angstrom
-	lamgrid=wrange[0] + wsampling * np.arange(np.floor((wrange[1]-wrange[0])/wsampling))
-
-	##
-	## convolve to resolution of spectral base, i.e. BC03 res = 3 \AA
-	##
-	## XSHOO resolution is 12600 (VIS) independent of lambda, i.e. choose kernel 
-	##    appropriate for central wavelength
-	xres=12600
-	FWHM_gal=np.average(wrange)/xres
-	FWHM_tem=3
-	FWHM_dif = np.sqrt(FWHM_tem**2 - FWHM_gal**2)
-	sigma = FWHM_dif/2.355/(wave[2]-wave[1]) # Sigma difference in pixels
-	
-	flux=gaussian_filter1d(flux,sigma)
-	##
-	## interpolation is flux-conserving when accounting for different spectral pixel size
-	##    dl is 0.2 in UVB and VIS, 0.6 in NIR; here we re-sample to 2 \AA
-	##
-	f=interp1d(wave,flux)
-	iflux=f(lamgrid)
-	
-	##
-	## interpolate inverse variance (since this is the additive quantity)
-	v=interp1d(wave,1/(noise**2))
-	ivariance=v(lamgrid)
-	inoise=1/np.sqrt(ivariance)
-
-	## masks for transition regions of XSHOOTER spectral arms
-	imask=np.zeros(iflux.shape)
-#	add_mask_telluric(lamgrid, imask, [5530,5600], z)
-#	add_mask_telluric(lamgrid, imask, [10100,10200], z)
-	
-	outdir=os.getenv('PROJECTS') + '/LP-BAT/XSHOOTER/STARLIGHT/STARLIGHTv04/spectra/'
-	np.savetxt(outdir+fname,np.transpose((lamgrid,iflux,inoise,imask)),fmt=('%5.0f.   %8.3f   %8.3f    %3.0f'))
-	print("Wrote {fname}".format(fname=fname))	
 
 ##
 ## read one or all XSHOOTER config information
