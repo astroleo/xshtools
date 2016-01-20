@@ -11,12 +11,14 @@
 ## required environment variables
 ##
 ## XDIR -- root directory for QC plots and output (calibrated) files
-## XSHOOREDUCED -- root directory where the pipeline-reduced data are
+## XDIRRED -- root directory where the pipeline-reduced data are
 
 import numpy as np
 from astropy.io import fits, ascii
+from astropy.table import Table
 from matplotlib import pyplot as plt
 from dar_extract import dar_position
+import sqlite3
 
 import os
 import pdb
@@ -226,6 +228,40 @@ def inspect_cube(f,s,w=False):
 	plt.tight_layout()
 	plt.show()
 
+##
+## FUNCTION dataset_by_obname
+##
+## PURPOSE
+##    get a dataset defintion (as astropy Table object) including DPIDs for a given dataset identified by OB name
+##
+## INPUT
+##    ob_name
+##
+def dataset_by_obname(ob_name):
+	dataset_definition = os.getenv("XDIR")+'/dataset_definition/'+ob_name+'.txt'
+	d=ascii.read(dataset_definition)
+	night=d['night'][0]
+	ob_name_list=[d['object'][0],d['telluric'][0],d['flux'][0]]
+	arms=["NIR","VIS","UVB"]
+	dprlist=["SCI","TELL","FLUX"]
+	
+	dataset = Table(names=('dprtype', 'ob_name', 'arm', 'dpid'), dtype=('S10', 'S20', 'S3', 'S29'), meta={'night': night})
+
+	conn=sqlite3.connect(os.getenv("OBSDB"))
+	c=conn.cursor()
+	
+	for arm in arms:
+		for ob,dpr in zip(ob_name_list,dprlist):
+			query = "select arcfile from shoot where night=\"" + night + \
+				"\" and ob_name=\""+ ob + \
+				"\" and arm=\"" + arm + \
+				"\" and opti2_name=\"IFU\" limit 1;"
+			c.execute(query)
+			dpid=c.fetchone()
+			dataset.add_row([dpr,ob,arm,dpid])
+
+	return(dataset)
+
 
 ##
 ## FUNCTION flatten_ob
@@ -253,7 +289,7 @@ def flatten_ob(ob_name):
 			ob=row[0]
 			dpid=row[1]
 			dpr=dprlist[row.index]
-			dir_cube=os.getenv("XSHOOREDUCED")+"/"+dpid.replace(":","_")+"_tpl/"
+			dir_cube=os.getenv("XDIRRED")+"/"+dpid.replace(":","_")+"_tpl/"
 			f_cube=dir_cube+ob+"_"+dpr+"_IFU_MERGE3D_DATA_OBJ_"+arm+".fits"
 
 			if not os.path.isfile(f_cube):

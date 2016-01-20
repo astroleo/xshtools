@@ -3,9 +3,10 @@ Collection of tools to analyze and interpret astronomical spectra from the VLT/X
 
 ## Installation
 ### Required environment variables
-XSHOODATA -- points at the directory of raw data
-XSHTOOLS -- directory for these scripts
-XDIR -- points at the data directory where pipeline-reduced data are and where quality checks and final calibrated data will be
+* XSHOODATA -- points at the directory of raw data
+* XSHTOOLS -- directory for these scripts
+* XDIR -- data directory (includes pipeline-reduced data, quality check plots and final calibrated data)
+* XDIRRED -- sub-directory of XDIR where pipeline-reduced data are
 
 ### Other requirements
-OBSDB -- environment variable pointing to the database with all observations (see my project esodb)
+* OBSDB -- environment variable pointing to the database with all observations (see my project esodb)

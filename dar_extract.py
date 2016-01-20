@@ -9,7 +9,7 @@ from atmo_disp import *
 
 def get_file(dpid):
 	subdir=dpid.replace(":","_")+"_tpl"
-	f=glob.glob(os.getenv("XSHOOREDUCED")+"/"+subdir+"/*_IFU_MERGE3D_DATA_OBJ_*.fits")
+	f=glob.glob(os.getenv("XDIRRED")+"/"+subdir+"/*_IFU_MERGE3D_DATA_OBJ_*.fits")
 	if len(f) != 1:
 		raise ValueError("There is no (or more than one) merged file in sub-directory " + subdir)
 	
