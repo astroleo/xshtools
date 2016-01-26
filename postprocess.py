@@ -18,7 +18,6 @@ from astropy.io import fits, ascii
 from astropy.table import Table
 from matplotlib import pyplot as plt
 from dar_extract import dar_position
-import sqlite3
 
 import os
 import pdb
@@ -239,27 +238,27 @@ def inspect_cube(f,s,w=False):
 ##
 def flatten_ob(ob_name):
 	arms=["NIR","VIS","UVB"]
+	dprlist=["SCI","TELL","FLUX"]
+
 	for arm in arms:
 		dataset_definition = os.getenv("XDIR")+'/dataset_definition/'+ob_name+'_'+arm+'.txt'
 		a=ascii.read(dataset_definition,data_start=0)
-		
-		##
-		## UVB does not need telluric correction
-		if arm=="UVB":
-			dprlist=["SCI","FLUX"]
-		else:
-			dprlist=["SCI","TELL","FLUX"]
-		
+				
 		for row in a:
 			ob=row[0]
 			dpid=row[1]
 			dpr=dprlist[row.index]
+			##
+			## UVB does not need telluric correction
+			if arm=="UVB" and dpr=="TELL":
+				continue
+			
+			dpid=dpid.split(".fits")[0]
 			dir_cube=os.getenv("XDIRRED")+"/"+dpid.replace(":","_")+"_tpl/"
 			f_cube=dir_cube+ob+"_"+dpr+"_IFU_MERGE3D_DATA_OBJ_"+arm+".fits"
 
 			if not os.path.isfile(f_cube):
-				print("Cube file does not exist at", f_cube)
-				continue
+				raise IOError("Cube file does not exist at", f_cube)
 
 			dir_out=os.getenv("XDIR")+"/spectra/"+ob_name+"/"
 			if not os.path.isdir(dir_out):
