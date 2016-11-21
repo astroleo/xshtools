@@ -43,9 +43,7 @@ def qual_interpret_interpolate(flux_cube, noise_cube, qual_cube, ix):
 	bad_aper = ix*qual_cube >= code_bad
 	
 	qual=np.zeros(flux_cube.shape[0])
-	corr=np.zeros(flux_cube.shape[0])
 
-	ncorr=0
 	nbad=0
 	ngood=0
 	
@@ -54,11 +52,9 @@ def qual_interpret_interpolate(flux_cube, noise_cube, qual_cube, ix):
 		
 		if nbad_in_aper == 0:
 			qual[s] = 1
-			corr[s] = 0
 			ngood+=1
 		else:
 			qual[s] = 0
-			corr[s] = 0
 			nbad+=1
 
 
@@ -66,9 +62,13 @@ def qual_interpret_interpolate(flux_cube, noise_cube, qual_cube, ix):
 	flux = np.sum(flux_cube*ix, axis=(1,2))
 	##
 	## "the variance of a sum of uncorrelated events is the sum of the variances"
-	noise = np.sqrt(np.sum((noise_cube*ix)**2, axis=(1,2)))
+	## standard error of the mean = sample standard deviation / sqrt(sample size)
+	##
+	numpix = np.sum(ix,axis=(1,2))
+#	pdb.set_trace()
+	noise = np.sqrt(np.sum((noise_cube*ix)**2, axis=(1,2)))/np.sqrt(numpix)
 		
-	return(flux,noise,qual,corr)
+	return(flux,noise,qual)
 
 
 ##
@@ -98,7 +98,7 @@ def flatten_spectrum(f,arm,dd_pixel,outfile=None):
 
 	##
 	## dd_pixel is either an array of same length as wave (check) or a single value (y_NIR from dar_position)
-	if dd_pixel.size > 1:
+	if np.size(dd_pixel) > 1:
 		z,y,x=np.mgrid[:flux_cube.shape[0],:flux_cube.shape[1],:flux_cube.shape[2]]
 		ix  = np.abs(y-dd_pixel[:,None,None]) < r_px_y
 	else:
@@ -107,22 +107,22 @@ def flatten_spectrum(f,arm,dd_pixel,outfile=None):
 
 	##
 	##
-	flux,noise,qual,corr = qual_interpret_interpolate(flux_cube, noise_cube, qual_cube, ix)
+	flux,noise,qual = qual_interpret_interpolate(flux_cube, noise_cube, qual_cube, ix)
 	
-	## plot (flux vs. wavelength + quality)
-	norm=np.median(flux)
-	plt.plot(wave,flux/norm)
-	plt.plot(wave,noise/norm,'g-')
-	plt.plot(wave[qual==0],flux[qual==0]/norm,'rx')
-	plt.plot(wave[corr==1],flux[corr==1]/norm,'g.',ms=10)
-	plt.xlabel("Wavelength")
-	plt.ylabel("Flux (normalized)")
-	if arm == "UVB":
-		plt.ylim([0,3])
-	else:
-		plt.ylim([0,2])
-
 	if outfile:		
+		## plot (flux vs. wavelength + quality)
+		norm=np.median(flux)
+		plt.plot(wave,flux/norm)
+		plt.plot(wave,noise/norm,'g-')
+		plt.plot(wave[qual==0],flux[qual==0]/norm,'rx')
+		plt.xlabel("Wavelength")
+		plt.ylabel("Flux (normalized)")
+
+		if arm == "UVB":
+			plt.ylim([0,3])
+		else:
+			plt.ylim([0,2])
+
 		plt.savefig(outfile+".pdf")
 		plt.close()
 
@@ -152,7 +152,6 @@ def flatten_spectrum(f,arm,dd_pixel,outfile=None):
 		plt.plot(wave,flux/norm)
 		plt.plot(wave,noise/norm,'g-')
 		plt.plot(wave[qual==0],flux[qual==0]/norm,'rx',ms=2)
-		plt.plot(wave[corr==1],flux[corr==1]/norm,'g.',ms=5)
 		plt.xlabel("Wavelength")
 		plt.ylabel("Flux (normalized)")
 		plt.ylim([0,1.5])
@@ -162,7 +161,7 @@ def flatten_spectrum(f,arm,dd_pixel,outfile=None):
 	else:
 		plt.show()
 		
-	return(wave,flux,noise,qual,corr)
+	return(wave,flux,noise,qual)
 
 ##
 ## helper function to inspect flux and mask cube and spectrum around chosen slice
@@ -248,14 +247,12 @@ def flatten_ob(ob_name):
 			ob=row[0]
 			dpid=row[1]
 			dpr=dprlist[row.index]
-			##
-			## UVB does not need telluric correction
-			if arm=="UVB" and dpr=="TELL":
-				continue
-			
 			dpid=dpid.split(".fits")[0]
 			dir_cube=os.getenv("XDIRRED")+"/"+dpid.replace(":","_")+"_tpl/"
 			f_cube=dir_cube+ob+"_"+dpr+"_IFU_MERGE3D_DATA_OBJ_"+arm+".fits"
+			
+			if arm=="UVB" and dpr=="TELL":
+				continue
 
 			if not os.path.isfile(f_cube):
 				raise IOError("Cube file does not exist at", f_cube)
@@ -265,37 +262,70 @@ def flatten_ob(ob_name):
 				os.mkdir(dir_out)
 		
 			f_out=dir_out+dpr+"_"+arm+"_spec.fits"
-			if os.path.isfile(f_out):
-				print("Outfile (spectrum) exists:",f_out)
-				continue
 
-			##
-			## do centroiding on near-IR arm and compute atmospheric dispersion correction from that position
 			if arm=="NIR" and dpr=="SCI":
-				dd_pixel_UVB_SCI,dd_pixel_VIS_SCI,y_NIR = dar_position(dpid)
-				flatten_spectrum(f_cube,arm,y_NIR,outfile=f_out)
+				dpid_sci_nir = dpid
+				f_cube_sci_nir = f_cube
+				f_out_sci_nir = f_out
 			if arm=="NIR" and dpr=="TELL":
-				dd_pixel_UVB_TELL,dd_pixel_VIS_TELL,y_NIR = dar_position(dpid)
-				flatten_spectrum(f_cube,arm,y_NIR,outfile=f_out)
+				dpid_tell_nir = dpid
+				f_cube_tell_nir = f_cube
+				f_out_tell_nir = f_out
 			if arm=="NIR" and dpr=="FLUX":
-				dd_pixel_UVB_FLUX,dd_pixel_VIS_FLUX,y_NIR_FLUX = dar_position(dpid)
-				flatten_spectrum(f_cube,arm,y_NIR,outfile=f_out)
-			
-			if arm=="UVB" and dpr=="SCI":
-				flatten_spectrum(f_cube,arm,dd_pixel_UVB_SCI,outfile=f_out)
-			if arm=="UVB" and dpr=="TELL":
-				flatten_spectrum(f_cube,arm,dd_pixel_UVB_TELL,outfile=f_out)
-			if arm=="UVB" and dpr=="FLUX":
-				flatten_spectrum(f_cube,arm,dd_pixel_UVB_FLUX,outfile=f_out)
-
+				dpid_flux_nir = dpid			
+				f_cube_flux_nir = f_cube
+				f_out_flux_nir = f_out
 			if arm=="VIS" and dpr=="SCI":
-				flatten_spectrum(f_cube,arm,dd_pixel_VIS_SCI,outfile=f_out)
+				dpid_sci_vis = dpid
+				f_cube_sci_vis = f_cube
+				f_out_sci_vis = f_out
 			if arm=="VIS" and dpr=="TELL":
-				flatten_spectrum(f_cube,arm,dd_pixel_VIS_TELL,outfile=f_out)
+				dpid_tell_vis = dpid
+				f_cube_tell_vis = f_cube
+				f_out_tell_vis = f_out
 			if arm=="VIS" and dpr=="FLUX":
-				flatten_spectrum(f_cube,arm,dd_pixel_VIS_FLUX,outfile=f_out)
+				dpid_flux_vis = dpid
+				f_cube_flux_vis = f_cube
+				f_out_flux_vis = f_out
+			if arm=="UVB" and dpr=="SCI":
+				dpid_sci_uvb = dpid
+				f_cube_sci_uvb = f_cube
+				f_out_sci_uvb = f_out
+			if arm=="UVB" and dpr=="FLUX":
+				dpid_flux_uvb = dpid
+				f_cube_flux_uvb = f_cube
+				f_out_flux_uvb = f_out
 
+	##
+	## for a few objects automatic extraction fails and we need to set y_NIR manually
+	y_SCI_NIR_manually=False
+	if dpid_sci_nir=="XSHOO.2015-05-21T07:40:31.524":
+		y_SCI_NIR_manually=11.0
+	if dpid_sci_nir=="XSHOO.2014-02-21T03:57:08.535": ## NGC3351_1
+		y_SCI_NIR_manually=4.0
+	if dpid_sci_nir=="XSHOO.2015-05-21T02:55:25.591": ## NGC5128_1
+		y_SCI_NIR_manually=9.0
 
+	##
+	## do centroiding on near-IR arm and compute atmospheric dispersion correction from that position
+	##	
+	dd_pixel_SCI_UVB, dd_pixel_SCI_VIS, y_SCI_NIR = dar_position(dpid_sci_nir, DPID_VIS=dpid_sci_vis, DPID_UVB=dpid_sci_uvb, fplot=ob_name+"_SCI",y_NIR=y_SCI_NIR_manually)
+	dd_pixel_TELL_UVB, dd_pixel_TELL_VIS, y_TELL_NIR = dar_position(dpid_tell_nir) ## no QC plot here since I normally don't have the UVB arm data for the telluric
+	dd_pixel_FLUX_UVB, dd_pixel_FLUX_VIS, y_FLUX_NIR = dar_position(dpid_flux_nir, DPID_VIS=dpid_flux_vis, DPID_UVB=dpid_flux_uvb, fplot=ob_name+"_FLUX")
+
+	flatten_spectrum(f_cube_sci_nir, "NIR", y_SCI_NIR, outfile=f_out_sci_nir)
+	flatten_spectrum(f_cube_sci_vis, "VIS", dd_pixel_SCI_VIS, outfile=f_out_sci_vis)
+	flatten_spectrum(f_cube_sci_uvb, "UVB", dd_pixel_SCI_UVB, outfile=f_out_sci_uvb)
+
+	## not creating spectrum for UVB arm telluric since it normally is not reduced (since not required)
+	flatten_spectrum(f_cube_tell_nir, "NIR", y_TELL_NIR, outfile=f_out_tell_nir)
+	flatten_spectrum(f_cube_tell_vis, "VIS", dd_pixel_TELL_VIS, outfile=f_out_tell_vis)
+
+	flatten_spectrum(f_cube_flux_nir, "NIR", y_FLUX_NIR, outfile=f_out_flux_nir)
+	flatten_spectrum(f_cube_flux_vis, "VIS", dd_pixel_FLUX_VIS, outfile=f_out_flux_vis)
+	flatten_spectrum(f_cube_flux_uvb, "UVB", dd_pixel_FLUX_UVB, outfile=f_out_flux_uvb)
+
+ 
 
 
 ################################################################################
