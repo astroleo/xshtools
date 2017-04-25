@@ -1,6 +1,9 @@
 # xshtools
 Collection of tools to analyze and interpret astronomical spectra from the VLT/X-SHOOTER echelle spectrograph
 
+# History
+Last updated 25 Apr 2017 by Leonard Burtscher
+
 ## Installation
 ### Required environment variables
 * XSHOODATA -- points at the directory of raw data
