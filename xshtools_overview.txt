@@ -1,0 +1,15 @@
+philosophy: xshtools has consolidated data reduction pipeline
+X-SHOOTER/data_reduction has tests to improve / enhance this
+
+== available codes / pipeline ==
+atmo_disp.py -- calculate atmospheric dispersion
+dar_extract.py -- uses atmo_disp to extract position to extract spectrum
+molecfit_wrapper.py -- routines run_molecfit; flux_intercalibration; flux_calibrate + QC plots
+postprocess.py -- qual_interpret_interpolate; flatten_spectrum; inspect_cube; flatten_ob
+unmask_spectra.py -- unmask_spectra (interpolate masked regions)
+
+
+== other codes ==
+download_sort_xshoo.sh -- download + sort raw data files
+ob_paths_night.sh -- search for SCI,TELL,FLUX files for UVB,VIS,NIR arms given night
+XQC_plot -- produce a QC plot for an X-SHOOTER dataset: XQC_plot; QC_night; QC_all
