@@ -120,7 +120,7 @@ def dar_position(DPID_NIR,DPID_VIS=False,DPID_UVB=False,fplot=None,y_NIR=False):
 		##
 		## now do a Gauss fit in each slice to determine the one with the most flux
 		flux_slices=[]
-		for i in np.arange(3)
+		for i in np.arange(3):
 			profile=np.sum(flux_NIR[JH,:,i],axis=0)
 			g=fit_g(g_init,xx,profile)
 			flux_slices.append(g.amplitude.value)
