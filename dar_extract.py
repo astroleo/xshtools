@@ -108,15 +108,23 @@ def dar_position(DPID_NIR,DPID_VIS=False,DPID_UVB=False,fplot=None,y_NIR=False):
 	if not y_NIR:
 		print("Determining y_NIR from data.")
 		## use median of J and H slices (since K band has weird bump problem)
-		J=(wave_NIR>1150) & (wave_NIR<1350)
-		H=(wave_NIR>1509) & (wave_NIR<1799)
-		profile=np.sum(flux_NIR[J,:,:],axis=(0,2)) + np.sum(flux_NIR[H,:,:],axis=(0,2))
+		JH=((wave_NIR>1150) & (wave_NIR<1350)) | ((wave_NIR>1509) & (wave_NIR<1799))
+		profile=np.sum(flux_NIR[JH,:,:],axis=(0,2))
 		xx=np.arange(len(profile))
 
 		g_init=models.Gaussian1D(amplitude=100000,mean=10,stddev=5)
 		fit_g=fitting.LevMarLSQFitter()
 		g=fit_g(g_init,xx,profile)
 		y_NIR=g.mean.value
+		
+		##
+		## now do a Gauss fit in each slice to determine the one with the most flux
+		flux_slices=[]
+		for i in np.arange(3)
+			profile=np.sum(flux_NIR[JH,:,i],axis=0)
+			g=fit_g(g_init,xx,profile)
+			flux_slices.append(g.amplitude.value)
+		max_flux_slice_NIR = np.argmax(flux_slices)
 	else:
 		print("Using manually set y_NIR.")
 	
@@ -219,7 +227,7 @@ def dar_position(DPID_NIR,DPID_VIS=False,DPID_UVB=False,fplot=None,y_NIR=False):
 		plt.savefig(file_plot.split(".png")[0]+"_centroid.png")
 		plt.clf()
 
-	return(dd_pixel_UVB, dd_pixel_VIS, y_NIR)
+	return(dd_pixel_UVB, dd_pixel_VIS, y_NIR, max_flux_slice_NIR)
 
 
 #UVB="XSHOO.2014-02-25T08:57:49.298"

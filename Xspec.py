@@ -23,6 +23,10 @@ import params
 
 import pdb
 
+## CHANGE LOG
+##
+## 2017-08-01   Changed mask name from OB_name to "mask"
+
 
 ####################################################################################################
 ##
@@ -36,7 +40,7 @@ import pdb
 ##     ix: aperture mask
 ##
 ####################################################################################################
-def qual_interpret_interpolate(flux_cube, noise_cube, qual_cube, ix):
+def qual_interpret_interpolate(flux_cube, noise_cube, qual_cube, ix, slitlet=False):
 	## code_bad: code above which a pixel is interpreted as bad
 	code_bad = 1
 
@@ -61,7 +65,11 @@ def qual_interpret_interpolate(flux_cube, noise_cube, qual_cube, ix):
 
 
 	print("bad: {0}, good: {1} pixels.".format(nbad,ngood))
-	flux = np.sum(flux_cube*ix, axis=(1,2))
+	if slitlet != False:
+		pdb.set_trace()
+		flux = np.sum(flux_cube*ix, axis=(1,2))
+	else:
+		flux = np.sum(flux_cube*ix, axis=(1,2))
 	##
 	## "the variance of a sum of uncorrelated events is the sum of the variances"
 	## standard error of the mean = sample standard deviation / sqrt(sample size)
@@ -217,8 +225,11 @@ class Xspec():
 	##
 	## take data cube, extract 1D spectrum from it, call XQC_plot
 	##
+	## if argument slitlet is set, use only this slitlet (width=0.6") for 
+	##    spectrum extraction and set the aperture in the y direction to the same value
+	##
 	####################################################################################################	
-	def flatten_spectrum(self, dpr, arm, dd_pixel):
+	def flatten_spectrum(self, dpr, arm, dd_pixel, slitlet=False):
 		f = self.dataset[dpr][arm]["f_cube"]
 		if not os.path.isfile(f):
 			raise IOError("Reduced data cube file not available: ", f)
@@ -250,7 +261,7 @@ class Xspec():
 			z,y,x=np.mgrid[:flux_cube.shape[0],:flux_cube.shape[1],:flux_cube.shape[2]]
 			ix  = np.abs(y-dd_pixel) < r_px_y
 
-		flux,noise,qual = qual_interpret_interpolate(flux_cube, noise_cube, qual_cube, ix)
+		flux,noise,qual = qual_interpret_interpolate(flux_cube, noise_cube, qual_cube, ix, slitlet=False)
 		
 		##
 		## create QC plot showing raw counts + bad pixel histogram, raw count spectrum + masked slice image
@@ -338,15 +349,15 @@ class Xspec():
 		##
 		## do centroiding on near-IR arm and compute atmospheric dispersion correction from that position
 		##	
-		dd_pixel_SCI_UVB, dd_pixel_SCI_VIS, y_SCI_NIR = dar_position(self.dataset["SCI"]["NIR"]["dpid"], 
+		dd_pixel_SCI_UVB, dd_pixel_SCI_VIS, y_SCI_NIR, max_flux_slice_NIR_SCI = dar_position(self.dataset["SCI"]["NIR"]["dpid"], 
 			DPID_VIS=self.dataset["SCI"]["VIS"]["dpid"], 
 			DPID_UVB=self.dataset["SCI"]["UVB"]["dpid"], 
 			fplot=self.ob_name+"_SCI",
 			y_NIR=y_SCI_NIR_manually)
 		##
 		## no QC plot for TELL since I normally don't have the UVB arm data for the telluric
-		dd_pixel_TELL_UVB, dd_pixel_TELL_VIS, y_TELL_NIR = dar_position(self.dataset["TELL"]["NIR"]["dpid"])
-		dd_pixel_FLUX_UVB, dd_pixel_FLUX_VIS, y_FLUX_NIR = dar_position(self.dataset["FLUX"]["NIR"]["dpid"], 
+		dd_pixel_TELL_UVB, dd_pixel_TELL_VIS, y_TELL_NIR, max_flux_slice_NIR_TELL = dar_position(self.dataset["TELL"]["NIR"]["dpid"])
+		dd_pixel_FLUX_UVB, dd_pixel_FLUX_VIS, y_FLUX_NIR, max_flux_slice_NIR_FLUX = dar_position(self.dataset["FLUX"]["NIR"]["dpid"], 
 			DPID_VIS=self.dataset["FLUX"]["VIS"]["dpid"], 
 			DPID_UVB=self.dataset["FLUX"]["UVB"]["dpid"], 
 			fplot=self.ob_name+"_FLUX")
@@ -662,7 +673,7 @@ class Xspec():
 			shutil.copy(f_template,self.SL_infile)
 			
 			with open(self.SL_infile,'a') as f:
-				f.write(self.ob_name+".txt   StCv04.C11.config   Base.BC03.N   "+self.ob_name+"   CAL   31   206.0   " + self.ob_name+".out\n")
+				f.write(self.ob_name+".txt   StCv04.C11.config   Base.BC03.N.solar   mask   CAL   31   206.0   " + self.ob_name+".out\n")
 			
 			print("Wrote " + self.SL_infile)
 	

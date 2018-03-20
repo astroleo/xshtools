@@ -8,6 +8,13 @@ import pdb
 
 
 ##
+## CHANGE LOG
+##
+## 2017-08-01   Changed residual plot to show +/- 5 sigma and draw line at +/- 2 sigma
+
+
+
+##
 ## wishlist
 ##    - widget button to show plots of next object
 ##    - read llow_norm, lupp_norm from StVc04.C11.config, instead of hardcoding it here
@@ -16,7 +23,9 @@ import pdb
 ##
 ## synRange: restrict plot to wavelength range in which the synthesis was done
 
-def plotSL(id,Xcfg,pdf=True,synRange=True,plotSFH=True,llow_norm=6810,lupp_norm=6870,Olsyn_ini=3800,Olsyn_fin=10000):
+## Note: Xcfg does not exist!?
+
+def plotSL(id,pdf=True,synRange=False,plotSFH=True,llow_norm=6810,lupp_norm=6870,Olsyn_ini=3800,Olsyn_fin=10000):
 	os.chdir(os.getenv("HOME")+"/STARLIGHT")
 	
 	file_obs="spectra/"+id+".txt"
@@ -138,11 +147,11 @@ def plotSL(id,Xcfg,pdf=True,synRange=True,plotSFH=True,llow_norm=6810,lupp_norm=
 	##
 	## mark points that have not been used for the fit
 	##
-	plt.plot(wsyn, np.full(np.shape(fres),-1,dtype=int),color='grey',linestyle="dotted")
-	plt.plot(wsyn, np.full(np.shape(fres),1,dtype=int),color='grey',linestyle="dotted")
+	plt.plot(wsyn, np.full(np.shape(fres),-2,dtype=int),color='grey',linestyle="dotted")
+	plt.plot(wsyn, np.full(np.shape(fres),2,dtype=int),color='grey',linestyle="dotted")
 
 	plt.xlim((w_min,w_max))
-	plt.ylim((-3,3))
+	plt.ylim((-5,5))
 	plt.xlabel(r'$\lambda$' + ' [$\AA$]',fontsize=10)
 	plt.ylabel(r"Residual/$\sigma$",fontsize=10)
 		
@@ -153,7 +162,7 @@ def plotSL(id,Xcfg,pdf=True,synRange=True,plotSFH=True,llow_norm=6810,lupp_norm=
 
 
 	if pdf == True:
-		file_plot=os.getenv("HOME")+"STARLIGHT/plot/"+id+".pdf"
+		file_plot=os.getenv("HOME")+"/STARLIGHT/plot/"+id+".pdf"
 		plt.savefig(file_plot)
 		plt.tight_layout()
 		plt.close()
@@ -180,11 +189,16 @@ def plot_sfh(file_popvec):
 	popvec_lw_sol=popvec_sol[:,1]
 	popvec_lw_sup=popvec_sup[:,1]
 
-	agevec_log=np.log10(popvec_sub[:,4])
+	agevec_log=np.log10(popvec_sol[:,4])
 
-	plt.bar(agevec_log,popvec_lw_sub, width=0.15,color='b',label='sub-solar')
-	plt.bar(agevec_log,popvec_lw_sol, width=0.15,color='g',bottom=popvec_lw_sub,label='solar')
-	plt.bar(agevec_log,popvec_lw_sup, width=0.15,color='r',bottom=popvec_lw_sol+popvec_lw_sub,label='super-solar')
+	if len(popvec_lw_sub)>0:
+		## assume we have three metallicities
+		plt.bar(agevec_log,popvec_lw_sub, width=0.15,color='b',label='sub-solar')
+		plt.bar(agevec_log,popvec_lw_sol, width=0.15,color='g',bottom=popvec_lw_sub,label='solar')
+		plt.bar(agevec_log,popvec_lw_sup, width=0.15,color='r',bottom=popvec_lw_sol+popvec_lw_sub,label='super-solar')
+	else:
+		##assume we have only solar
+		plt.bar(agevec_log,popvec_lw_sol, width=0.15,color='g',label='solar')
 	
 	plt.xticks((6,7,8,9,10),('6','7','8','9','10'))
 
