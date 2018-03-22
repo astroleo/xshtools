@@ -12,6 +12,8 @@ from sigma_clip_starlight import sigma_clip_starlight
 from obscure_spectrum import obscure_spectrum
 
 number_of_iterations=4
+AV=0
+
 
 # from xshtools/plotSL_collage.py
 def plot_sfh_summary(file_popvec,x,y,dx=800):
@@ -53,7 +55,6 @@ def plot_mask_evolution(ob_name):
 	plt.title("Mask evolution")
 	plt.savefig(basedir+"mask_evolution.pdf")
 	
-AV=0
 
 def evolve_mask(ob_name,AV=AV):
 	if AV != 0:

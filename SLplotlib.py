@@ -10,6 +10,7 @@ import pdb
 ##
 ## CHANGE LOG
 ##
+## 2018-03-21   Added parameter SL_infile to plotSL (without it the call in XSpec:740 would crash it)
 ## 2017-08-01   Changed residual plot to show +/- 5 sigma and draw line at +/- 2 sigma
 
 
@@ -25,7 +26,7 @@ import pdb
 
 ## Note: Xcfg does not exist!?
 
-def plotSL(id,pdf=True,synRange=False,plotSFH=True,llow_norm=6810,lupp_norm=6870,Olsyn_ini=3800,Olsyn_fin=10000):
+def plotSL(id, SL_infile, pdf=True, synRange=False, plotSFH=True, llow_norm=6810, lupp_norm=6870, Olsyn_ini=3800, Olsyn_fin=10000):
 	os.chdir(os.getenv("HOME")+"/STARLIGHT")
 	
 	file_obs="spectra/"+id+".txt"

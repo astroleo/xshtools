@@ -32,7 +32,7 @@ import pdb
 ##
 ## FUNCTION qual_interpret_interpolate
 ##
-## interpret QUAL extension in X-SHOOTER reduced data
+## interpret QUAL extension in X-SHOOTER reduced data, reduce input cube to 1D spectrum
 ##
 ## INPUT
 ##     flux_cube, noise_cube
@@ -65,17 +65,23 @@ def qual_interpret_interpolate(flux_cube, noise_cube, qual_cube, ix, slitlet=Fal
 
 
 	print("bad: {0}, good: {1} pixels.".format(nbad,ngood))
-	if slitlet != False:
-		pdb.set_trace()
-		flux = np.sum(flux_cube*ix, axis=(1,2))
+	##
+	## if a slitlet is given, we have the 0.6" extraction. In that case, we sum
+	##    up the flux only in that slitlet (0-2)
+	if slitlet:
+		flux = np.sum(flux_cube[:,:,slitlet]*ix[:,:,slitlet], axis=1)
 	else:
 		flux = np.sum(flux_cube*ix, axis=(1,2))
 	##
 	## "the variance of a sum of uncorrelated events is the sum of the variances"
 	## standard error of the mean = sample standard deviation / sqrt(sample size)
 	##
-	numpix = np.sum(ix,axis=(1,2))
-	noise = np.sqrt(np.sum((noise_cube*ix)**2, axis=(1,2)))/np.sqrt(numpix)
+	if slitlet:
+		numpix = np.sum(ix[:,:,slitlet],axis=1)
+		noise = np.sqrt(np.sum((noise_cube[:,:,slitlet]*ix[:,:,slitlet])**2, axis=1))/np.sqrt(numpix)
+	else:
+		numpix = np.sum(ix,axis=(1,2))
+		noise = np.sqrt(np.sum((noise_cube*ix)**2, axis=(1,2)))/np.sqrt(numpix)
 
 	return(flux,noise,qual)
 
@@ -106,10 +112,15 @@ class Xspec():
 	##
 	## build dataset from previously saved files or from queries to $OBSDB if files do not yet exist
 	##
+	## NEW (March 2018): if slitlet_UVB and slitlet_VIS are set (to 0,1,2), then use 0.6" extraction and 
+	##                   only the given slitlets rather than the standard extraction with 1.8" and all three slitlets
+	##
 	####################################################################################################
-	def __init__(self, ob_name, delete_old=False, object_name=""):
+	def __init__(self, ob_name, delete_old=False, object_name="", slitlet_UVB=False, slitlet_VIS=False):
 		self.ob_name = ob_name
 		self.object_name = object_name
+		self.slitlet_UVB = slitlet_UVB
+		self.slitlet_VIS = slitlet_VIS
 
 		if self.object_name == "":
 			if self.ob_name[:-2] == "ESO137":
@@ -118,6 +129,21 @@ class Xspec():
 				self.object_name = "ESO021-G004"
 			else:
 				self.object_name = ob_name[:-2]
+		
+		if slitlet_UVB:
+			if not slitlet_VIS:
+				raise("You need to specify both UVB and VIS slitlets or none")
+
+		if slitlet_VIS:
+			if not slitlet_UVB:
+				raise("You need to specify both UVB and VIS slitlets or none")
+		
+		##
+		## if we choose to select only one slitlet for the spectrum extraction, then
+		##    set the extraction aperture in y direction to the width of the slitlet,
+		##    i.e. 0.6"
+		if slitlet_VIS:
+			params.aperture_arcsec=0.6
 
 		##
 		## TODO: need some error handling here!
@@ -225,9 +251,6 @@ class Xspec():
 	##
 	## take data cube, extract 1D spectrum from it, call XQC_plot
 	##
-	## if argument slitlet is set, use only this slitlet (width=0.6") for 
-	##    spectrum extraction and set the aperture in the y direction to the same value
-	##
 	####################################################################################################	
 	def flatten_spectrum(self, dpr, arm, dd_pixel, slitlet=False):
 		f = self.dataset[dpr][arm]["f_cube"]
@@ -261,18 +284,18 @@ class Xspec():
 			z,y,x=np.mgrid[:flux_cube.shape[0],:flux_cube.shape[1],:flux_cube.shape[2]]
 			ix  = np.abs(y-dd_pixel) < r_px_y
 
-		flux,noise,qual = qual_interpret_interpolate(flux_cube, noise_cube, qual_cube, ix, slitlet=False)
+		flux,noise,qual = qual_interpret_interpolate(flux_cube, noise_cube, qual_cube, ix, slitlet=slitlet)
 		
 		##
 		## create QC plot showing raw counts + bad pixel histogram, raw count spectrum + masked slice image
 		dataset_raw = self.dataset[dpr][arm]["f_raw"]
-		if not os.path.isfile(dataset_raw):
-			raise IOError("Raw data not accessible at", dataset_raw)
-
-		###   need to adapt XQC_plot (make part of class?) in order to get access to masked data etc.
-		### perhaps it works as such -- i.e. reading data again in XQC_plot...
-		XQC_plot(self.dataset[dpr][arm]["dpid"], dataset_raw, f, dpr, self.night, arm, ix, flux_cube, qual_cube)
-		XQC_plot(self.dataset[dpr][arm]["dpid"], dataset_raw, f, dpr, self.night, arm, ix, flux_cube, qual_cube, plot_type="full")
+		if os.path.isfile(dataset_raw):
+			###   need to adapt XQC_plot (make part of class?) in order to get access to masked data etc.
+			### perhaps it works as such -- i.e. reading data again in XQC_plot...
+			XQC_plot(self.dataset[dpr][arm]["dpid"], dataset_raw, f, dpr, self.night, arm, ix, flux_cube, qual_cube)
+			XQC_plot(self.dataset[dpr][arm]["dpid"], dataset_raw, f, dpr, self.night, arm, ix, flux_cube, qual_cube, plot_type="full")
+		else:
+			print("Raw data not available, not calling XQC_plot.")
 		
 
 	
@@ -363,8 +386,8 @@ class Xspec():
 			fplot=self.ob_name+"_FLUX")
 		
 		self.flatten_spectrum("SCI", "NIR", y_SCI_NIR)
-		self.flatten_spectrum("SCI", "VIS", dd_pixel_SCI_VIS)
-		self.flatten_spectrum("SCI", "UVB", dd_pixel_SCI_UVB)
+		self.flatten_spectrum("SCI", "VIS", dd_pixel_SCI_VIS, slitlet=self.slitlet_VIS)
+		self.flatten_spectrum("SCI", "UVB", dd_pixel_SCI_UVB, slitlet=self.slitlet_UVB)
 
 		## not creating spectrum for UVB arm telluric since it normally is not reduced (since not required)
 		self.flatten_spectrum("TELL", "NIR", y_TELL_NIR)
@@ -515,7 +538,7 @@ class Xspec():
 			## determine plotting range
 			m=np.median(self.fv[(self.qv==1) & (self.wv>560) & (self.wv<600)])
 			s=np.std(self.fv[(self.qv==1) & (self.wv>560) & (self.wv<600)])
-			plt.ylim([np.min(0,s-3*m),s+3*m])
+			plt.ylim([np.min([0,s-3*m]),s+3*m])
 			##
 			## show and print correction factor
 			plt.plot([550,560],[fu_end,fu_end],'b-',linewidth=2)
@@ -532,7 +555,7 @@ class Xspec():
 			## determine plotting range
 			m=np.median(self.fv[(self.qv==1) & (self.wv>1000) & (self.wv<1050)])
 			s=np.std(self.fv[(self.qv==1) & (self.wv>1000) & (self.wv<1050)])
-			plt.ylim([np.min(0,s-3*m),s+5*m])
+			plt.ylim([np.min([0,s-3*m]),s+5*m])
 			##
 			## show and print correction factor
 			plt.plot([1000,1020],[fv_end,fv_end],'g-',linewidth=2)
